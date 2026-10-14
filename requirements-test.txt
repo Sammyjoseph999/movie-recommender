@@ -1,0 +1,6 @@
+# What the test suite needs. Tests use small hand-made ratings, so MovieLens is not downloaded.
+numpy>=1.26
+pandas>=2.2
+pytest>=8.0
+requests>=2.31
+scipy>=1.11
