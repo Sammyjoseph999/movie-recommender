@@ -30,6 +30,19 @@ A correlation between two movies is computed over the people who rated both, and
 
 <img src="images/pearson_threshold.png" alt="Validation NDCG as the shared-rater threshold rises, against the linear models" width="560">
 
+### Can genres and tags help with movies nobody has rated?
+
+Ratings-only models can never recommend a movie with no ratings, and 6.7% of the later 4-and-5-star ratings were for such movies. A content model scores every movie by how closely its genres and tags match the movies a user rated highly. Tags only count if written before their author's held-out period, so no answers leak in.
+
+| Model | NDCG@10 | NDCG@10, lightest quarter of users | Later-liked unrated movies found |
+|---|---|---|---|
+| EASE | 0.102 | 0.083 | 0% |
+| Genres and tags only | 0.006 | 0.005 | 0.8% |
+| EASE + genres and tags, blend tuned on validation | 0.100 | 0.085 | 0% |
+| EASE + 1 slot reserved for unrated movies | 0.094 | 0.071 | 0.9% |
+
+**A negative result: the metadata in this dataset is too thin.** There are 19 genre labels, and only 2.6% of movies have a tag written before the split. The tuned blend moved NDCG by about 1% on validation and the other way on test, which is noise. A reserved slot costs EASE 8% of its NDCG and almost never picks a movie the user goes on to like. New movies need richer descriptions: plot summaries, cast and crew, or the tag genome that ships with the larger MovieLens releases.
+
 ## Models
 
 | Model | Idea |
@@ -39,6 +52,7 @@ A correlation between two movies is computed over the people who rated both, and
 | Item-item Pearson | Movies whose ratings correlate with those the user rated 4 stars or more |
 | PureSVD | Truncated SVD of the ratings matrix, unrated entries as zero ([Cremonesi et al., 2010](https://dl.acm.org/doi/10.1145/1864708.1864721)) |
 | EASE | A linear item-to-item model with a closed-form solution ([Steck, 2019](https://arxiv.org/abs/1905.03375)) |
+| Genres and tags | Cosine similarity between a movie's genres and tags and those of the movies a user rated highly |
 
 All five are written with NumPy and SciPy, each in a few lines, in `recommender/models.py`. Both linear models train in seconds here.
 
@@ -48,6 +62,7 @@ All five are written with NumPy and SciPy, each in a few lines, in `recommender/
 recommender/data.py      download, time-based split, user-by-movie matrix
 recommender/models.py    the five recommenders and item-similarity lookup
 recommender/metrics.py   precision, recall, NDCG and coverage at N
+recommender/content.py   genre and tag features, the content model, blending and reserved slots
 notebook.ipynb           the comparison
 tests/                   unit tests on small hand-made ratings
 ```
@@ -68,7 +83,7 @@ pytest -q
 
 - 610 users is small. Differences of a few thousandths in NDCG are noise; the gaps between groups of models are not.
 - Splitting each user's history by time still lets a model learn from other users' later ratings. A single global cut-off date would be stricter.
-- Only ratings are used. Genres, tags and release years would help most where data is thinnest: new movies and new users.
+- Genres and the few tags in `ml-latest-small` did not help. Richer metadata, such as plot summaries or the tag genome in the larger MovieLens releases, is the next thing to try for new movies.
 - EASE stores an item-by-item matrix, which becomes the limit with hundreds of thousands of movies; there a factorisation model is the practical choice.
 
 ## License

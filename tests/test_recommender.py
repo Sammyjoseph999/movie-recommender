@@ -93,3 +93,66 @@ def test_evaluate_popularity(ratings):
 def test_similar_items_excludes_itself():
     similarity = np.array([[0, 0.2, 0.9], [0.2, 0, 0.1], [0.9, 0.1, 0]])
     assert similar_items(similarity, 0, n=2).tolist() == [2, 1]
+
+
+def test_from_frame_can_keep_unrated_movies(ratings):
+    data = Interactions.from_frame(ratings, items=[10, 11, 12, 20, 21, 22, 30, 99])
+    assert data.ratings.shape == (6, 8)
+    assert data.ratings[:, -1].sum() == 0
+    held_out = frame([(1, 99, 5.0, 99)])
+    assert data.relevant(held_out) == {0: {7}}
+
+
+def test_tags_before_split_drops_later_tags():
+    from recommender.content import tags_before_split
+    train = frame([(1, 10, 4.0, 100), (2, 10, 4.0, 50)])
+    tags = pd.DataFrame({"userId": [1, 1, 2], "movieId": [10, 11, 10], "tag": ["a", "b", "c"],
+                         "timestamp": [90, 150, 60]})
+    assert tags_before_split(tags, train)["tag"].tolist() == ["a"]
+
+
+@pytest.fixture
+def catalogue():
+    movies = pd.DataFrame({"movieId": [10, 11, 12, 20, 21, 22, 30, 40],
+                           "genres": ["Comedy"] * 3 + ["Horror"] * 3 + ["Drama", "Comedy|Romance"]})
+    tags = pd.DataFrame({"userId": [1, 2], "movieId": [10, 11], "tag": ["Feel good", "feel good"],
+                         "timestamp": [0, 0]})
+    return movies, tags
+
+
+def test_item_features_are_unit_length(catalogue):
+    from recommender.content import item_features
+    movies, tags = catalogue
+    features, summary = item_features(movies, tags, movies["movieId"].to_numpy())
+    assert np.allclose(np.asarray(features.multiply(features).sum(axis=1)).ravel(), 1)
+    assert summary["genre labels"] == 4
+
+
+def test_content_model_prefers_the_liked_genre(ratings, catalogue):
+    from recommender.content import ContentModel, item_features
+    movies, tags = catalogue
+    data = Interactions.from_frame(ratings, items=movies["movieId"])
+    features, _ = item_features(movies, tags, data.items)
+    scores = ContentModel(features).fit(data).score(np.array([0]))[0]   # user 1 likes comedies
+    col = {m: int(np.searchsorted(data.items, m)) for m in (40, 30)}
+    assert scores[col[40]] > scores[col[30]]
+
+
+def test_new_item_slots_put_unrated_movies_last(ratings, catalogue):
+    from recommender.content import ContentModel, NewItemSlots, item_features
+    movies, tags = catalogue
+    data = Interactions.from_frame(ratings, items=movies["movieId"])
+    features, _ = item_features(movies, tags, data.items)
+    model = NewItemSlots(Popularity(), ContentModel(features), k=1, n=3).fit(data)
+    order = np.argsort(-model.score(np.array([3]))[0])[:3]   # user 4 has seen 20, 21, 22 and 30
+    assert data.items[order[-1]] == 40                        # the only unrated movie fills the last slot
+    assert all(data.seen[3, i] == 0 for i in order)
+
+
+def test_blend_weight_zero_matches_main_order(ratings):
+    from recommender.content import Blend
+    data = Interactions.from_frame(ratings)
+    blend = Blend(Popularity(), ItemCosine(), 0.0).fit(data)
+    pop = Popularity().fit(data)
+    assert np.array_equal(np.argsort(-blend.score(np.array([0]))[0], kind="stable"),
+                          np.argsort(-pop.score(np.array([0]))[0], kind="stable"))

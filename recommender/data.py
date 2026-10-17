@@ -48,9 +48,15 @@ class Interactions:
     items: np.ndarray
 
     @classmethod
-    def from_frame(cls, frame):
-        users = np.sort(frame["userId"].unique())
-        items = np.sort(frame["movieId"].unique())
+    def from_frame(cls, frame, users=None, items=None):
+        """Build the matrix from a ratings frame.
+
+        By default the rows and columns are the users and movies that appear in `frame`.
+        Passing `items` (for example every movie in movies.csv) keeps columns for movies
+        with no ratings yet, so that a model using other information can recommend them.
+        """
+        users = np.sort(frame["userId"].unique()) if users is None else np.sort(np.asarray(users))
+        items = np.sort(frame["movieId"].unique()) if items is None else np.sort(np.asarray(items))
         rows = np.searchsorted(users, frame["userId"].to_numpy())
         cols = np.searchsorted(items, frame["movieId"].to_numpy())
         matrix = sparse.csr_matrix((frame["rating"].to_numpy(float), (rows, cols)),
